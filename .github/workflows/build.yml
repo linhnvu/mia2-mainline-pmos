@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       ui_choice:
-        description: 'Chọn giao diện (console = nhẹ để test boot, phosh = giao diện cảm ứng)'
+        description: 'Giao diện (console = nhẹ nhất, phosh = cảm ứng)'
         required: true
         default: 'console'
         type: choice
@@ -17,54 +17,62 @@ jobs:
   build-pmos:
     runs-on: ubuntu-latest
     steps:
-      - name: 1. Dọn dẹp ổ cứng máy chủ ảo
+      - name: 1. Dọn dẹp dung lượng trống
         run: |
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost /usr/local/lib/android
           df -h
 
-      - name: 2. Cài đặt công cụ phụ thuộc & QEMU ARM64
+      - name: 2. Cài đặt công cụ phụ thuộc
         run: |
           sudo apt-get update
           sudo apt-get install -y python3 python3-pip git openssl multipath-tools qemu-user-static binfmt-support
 
-      - name: 3. Cài đặt pmbootstrap
+      - name: 3. Cài đặt pmbootstrap và tải pmaports
         run: |
-          git clone https://gitlab.com ~/pmbootstrap
+          git clone --depth 1 https://gitlab.com ~/pmbootstrap
           sudo ln -s ~/pmbootstrap/pmbootstrap.py /usr/local/bin/pmbootstrap
 
-      - name: 4. Khởi tạo cấu hình và tải Device Tree SDM660
+          mkdir -p ~/.local/var/pmbootstrap/cache_git
+          git clone --depth 1 https://gitlab.com ~/.local/var/pmbootstrap/cache_git/pmaports
+
+      - name: 4. Kéo mã nguồn Xiaomi Mi A2 (sdm660-mainline)
         run: |
-          mkdir -p ~/.config
-          yes "" | pmbootstrap init || true
+          PMAPORTS_DIR=~/.local/var/pmbootstrap/cache_git/pmaports
           
+          # Kiểm tra xem jasmine_sprout đã có trong repo chính thức chưa
+          FOUND=$(find "$PMAPORTS_DIR/device" -maxdepth 2 -name "device-xiaomi-jasmine_sprout" | head -n 1)
+          
+          if [ -z "$FOUND" ]; then
+            echo "Chưa có trong repo chính, đang kéo từ sdm660-mainline..."
+            git clone --depth 1 https://github.com ~/sdm660-pmaports
+            cp -rn ~/sdm660-pmaports/device/testing/* "$PMAPORTS_DIR/device/testing/" 2>/dev/null || true
+            cp -rn ~/sdm660-pmaports/device/community/* "$PMAPORTS_DIR/device/community/" 2>/dev/null || true
+          fi
+          
+          # Xác nhận lại thư mục thiết bị đã tồn tại
+          find "$PMAPORTS_DIR/device" -maxdepth 2 -name "*jasmine_sprout*"
+
+      - name: 5. Cấu hình pmbootstrap
+        run: |
           pmbootstrap config work ~/.local/var/pmbootstrap
-          pmbootstrap config channel edge
+          pmbootstrap config aports ~/.local/var/pmbootstrap/cache_git/pmaports
+          pmbootstrap config device xiaomi-jasmine_sprout
           pmbootstrap config ui ${{ github.event.inputs.ui_choice }}
           pmbootstrap config user user
+          pmbootstrap status
 
-          # Kiểm tra xem xiaomi-jasmine_sprout đã có sẵn trong pmaports chưa
-          PMAPORTS_DIR=~/.local/var/pmbootstrap/cache_git/pmaports
-          if [ ! -d "$PMAPORTS_DIR/device/testing/device-xiaomi-jasmine_sprout" ] && [ ! -d "$PMAPORTS_DIR/device/community/device-xiaomi-jasmine_sprout" ]; then
-            echo "Đang kéo mã nguồn từ cộng đồng sdm660-mainline..."
-            git clone --depth 1 https://github.com ~/sdm660-pmaports
-            cp -rn ~/sdm660-pmaports/device/testing/* "$PMAPORTS_DIR/device/testing/" || true
-          fi
-
-          pmbootstrap config device xiaomi-jasmine_sprout
-
-      - name: 5. Biên dịch nhân Mainline và đóng gói hệ điều hành
+      - name: 6. Biên dịch nhân và đóng gói hệ điều hành
         run: |
-          # Mật khẩu đăng nhập mặc định sẽ là: 147147
           pmbootstrap install --password 147147
 
-      - name: 6. Xuất file ảnh (boot.img và rootfs)
+      - name: 7. Xuất file ảnh
         run: |
           pmbootstrap export
           mkdir -p ~/release_files
           cp -L /tmp/postmarketOS-export/* ~/release_files/
           ls -lh ~/release_files/
 
-      - name: 7. Tải file kết quả lên GitHub Artifacts
+      - name: 8. Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: xiaomi-mia2-mainline-${{ github.event.inputs.ui_choice }}
