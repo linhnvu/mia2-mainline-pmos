@@ -1,0 +1,72 @@
+name: Build Mainline Linux for Xiaomi Mi A2
+
+on:
+  workflow_dispatch:
+    inputs:
+      ui_choice:
+        description: 'Chọn giao diện (console = nhẹ để test boot, phosh = giao diện cảm ứng)'
+        required: true
+        default: 'console'
+        type: choice
+        options:
+          - console
+          - phosh
+          - sxmo-de-sway
+
+jobs:
+  build-pmos:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 1. Dọn dẹp ổ cứng máy chủ ảo
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost /usr/local/lib/android
+          df -h
+
+      - name: 2. Cài đặt công cụ phụ thuộc & QEMU ARM64
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3 python3-pip git openssl multipath-tools qemu-user-static binfmt-support
+
+      - name: 3. Cài đặt pmbootstrap
+        run: |
+          git clone https://gitlab.com ~/pmbootstrap
+          sudo ln -s ~/pmbootstrap/pmbootstrap.py /usr/local/bin/pmbootstrap
+
+      - name: 4. Khởi tạo cấu hình và tải Device Tree SDM660
+        run: |
+          mkdir -p ~/.config
+          yes "" | pmbootstrap init || true
+          
+          pmbootstrap config work ~/.local/var/pmbootstrap
+          pmbootstrap config channel edge
+          pmbootstrap config ui ${{ github.event.inputs.ui_choice }}
+          pmbootstrap config user user
+
+          # Kiểm tra xem xiaomi-jasmine_sprout đã có sẵn trong pmaports chưa
+          PMAPORTS_DIR=~/.local/var/pmbootstrap/cache_git/pmaports
+          if [ ! -d "$PMAPORTS_DIR/device/testing/device-xiaomi-jasmine_sprout" ] && [ ! -d "$PMAPORTS_DIR/device/community/device-xiaomi-jasmine_sprout" ]; then
+            echo "Đang kéo mã nguồn từ cộng đồng sdm660-mainline..."
+            git clone --depth 1 https://github.com ~/sdm660-pmaports
+            cp -rn ~/sdm660-pmaports/device/testing/* "$PMAPORTS_DIR/device/testing/" || true
+          fi
+
+          pmbootstrap config device xiaomi-jasmine_sprout
+
+      - name: 5. Biên dịch nhân Mainline và đóng gói hệ điều hành
+        run: |
+          # Mật khẩu đăng nhập mặc định sẽ là: 147147
+          pmbootstrap install --password 147147
+
+      - name: 6. Xuất file ảnh (boot.img và rootfs)
+        run: |
+          pmbootstrap export
+          mkdir -p ~/release_files
+          cp -L /tmp/postmarketOS-export/* ~/release_files/
+          ls -lh ~/release_files/
+
+      - name: 7. Tải file kết quả lên GitHub Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: xiaomi-mia2-mainline-${{ github.event.inputs.ui_choice }}
+          path: ~/release_files/*
+          retention-days: 7
