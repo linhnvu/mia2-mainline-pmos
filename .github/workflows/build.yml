@@ -25,7 +25,7 @@ jobs:
       - name: 2. Cài đặt công cụ phụ thuộc
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3 python3-pip git openssl multipath-tools qemu-user-bìnmt binfmt-support
+          sudo apt-get install -y python3 python3-pip git openssl multipath-tools qemu-user-binfmt binfmt-support
 
       - name: 3. Cài đặt pmbootstrap và tải pmaports
         run: |
