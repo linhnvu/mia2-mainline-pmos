@@ -29,11 +29,12 @@ jobs:
 
       - name: 3. Cài đặt pmbootstrap và tải pmaports
         run: |
-          git clone --depth 1 https://gitlab.com ~/pmbootstrap
+          git clone --depth 1 https://github.com ~/pmbootstrap
           sudo ln -s ~/pmbootstrap/pmbootstrap.py /usr/local/bin/pmbootstrap
 
           mkdir -p ~/.local/var/pmbootstrap/cache_git
-          git clone --depth 1 https://gitlab.com ~/.local/var/pmbootstrap/cache_git/pmaports
+          git clone --depth 1 https://github.com ~/.local/var/pmbootstrap/cache_git/pmaports
+
 
       - name: 4. Kéo mã nguồn Xiaomi Mi A2 (sdm660-mainline)
         run: |
